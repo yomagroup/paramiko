@@ -17,13 +17,18 @@
 # 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.
 
 """
-Sample script to show how to use paramikos SOCKS proxy server functionality.
+Sample script to show how to use paramiko's SOCKS proxy server functionality.
 
-This script connects to the requested SSH server and sets up a local
-SOCKS proxy (similar to `openssh -D`). It then configures a requests
-session to use this SOCKS proxy and fetches the provided URL tunneled
-through the SSH connection.
+This script connects to a configured SSH server and opens a local
+SOCKS5 proxy which tunnels all traffic over the SSH connection (similar to
+`openssh -D`). It then configures a requests session to use this SOCKS5 proxy
+to fetch the configured URL tunneled through the SSH connection.
+
+Please note that you need to install requests with socks proxy support
+(`requests[socks]`) for this demo to work.
 """
+
+import getpass
 
 from optparse import OptionParser
 
@@ -60,10 +65,29 @@ def parse_options():
         help="username for SSH authentication",
     )
     parser.add_option(
-        "-p",
-        "--password",
+        "-K",
+        "--key",
         action="store",
-        help="password for SSH authentication",
+        type="string",
+        dest="keyfile",
+        default=None,
+        help="private key file to use for SSH authentication",
+    )
+    parser.add_option(
+        "",
+        "--no-key",
+        action="store_false",
+        dest="look_for_keys",
+        default=True,
+        help="don't look for or use a private key file",
+    )
+    parser.add_option(
+        "-P",
+        "--password",
+        action="store_true",
+        dest="readpass",
+        default=False,
+        help="read password (for key or password auth) from stdin",
     )
     parser.add_option(
         "-r",
@@ -80,14 +104,14 @@ def parse_options():
         type="string",
         default=DEFAULT_SOCKS_ADDR,
         metavar="host:port",
-        help="Host and port the SOCKS proxy should bind to",
+        help="Host and port the SOCKS proxy should bind to. Defaults to %s" %
+             DEFAULT_SOCKS_ADDR,
     )
     options, args = parser.parse_args()
 
     if len(args) != 1:
         parser.error("Incorrect number of positional arguments.")
-    if not options.user or not options.password or not options.remote or \
-            not options.socks_addr:
+    if not options.user or not options.remote or not options.socks_addr:
         parser.error("Mandatory options missing.")
 
     ssh_server, ssh_port = get_host_port(options.remote, DEFAULT_SSH_PORT)
@@ -98,7 +122,9 @@ def parse_options():
         ssh_server,
         ssh_port,
         options.user,
-        options.password,
+        options.keyfile,
+        options.look_for_keys,
+        options.readpass,
         socks_addr,
         socks_port,
         args[0]
@@ -110,10 +136,16 @@ def main():
     ssh_server = options[0]
     ssh_port = options[1]
     user = options[2]
-    password = options[3]
-    socks_addr = options[4]
-    socks_port = options[5]
-    url_to_fetch = options[6]
+    keyfile = options[3]
+    look_for_keys = options[4]
+    readpass = options[5]
+    socks_addr = options[6]
+    socks_port = options[7]
+    url_to_fetch = options[8]
+
+    password = None
+    if readpass:
+        password = getpass.getpass("Enter SSH password: ")
 
     with SSHClient() as ssh_client:
         ssh_client.load_system_host_keys()
@@ -124,7 +156,9 @@ def main():
                 ssh_server,
                 port=ssh_port,
                 username=user,
-                password=password
+                key_filename=keyfile,
+                look_for_keys=look_for_keys,
+                password=password,
             )
         except Exception as e:
             print("*** Failed to connect to server: {}".format(e))
@@ -135,7 +169,9 @@ def main():
             port=socks_port
         )
 
-        # example of how to use with requests
+        # Example of how to use with requests.
+        # Using the socks5h protocol for resolving host names on SOCKS
+        # server side works as well.
         proxies = {
             'http': 'socks5://{}:{}'.format(socks_addr, socks_port),
             'https': 'socks5://{}:{}'.format(socks_addr, socks_port),
@@ -145,7 +181,8 @@ def main():
         response = session.get(url_to_fetch)
         print(response.text)
 
-        # Optional, would get closed together with the SSHClient as well.
+        # Closing the SOCKS proxy is optional, as it would get closed together
+        # with the SSHClient as well.
         proxy.close()
 
 

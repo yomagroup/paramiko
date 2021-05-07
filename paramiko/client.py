@@ -37,7 +37,7 @@ from paramiko.ed25519key import Ed25519Key
 from paramiko.hostkeys import HostKeys
 from paramiko.py3compat import string_types
 from paramiko.rsakey import RSAKey
-from paramiko.socks_proxy import SocksProxy
+from paramiko.socks_proxy import SOCKSProxy
 from paramiko.ssh_exception import (
     SSHException,
     BadHostKeyException,
@@ -542,22 +542,22 @@ class SSHClient(ClosingContextManager):
 
     def open_socks_proxy(self, bind_address="localhost", port=1080):
         """
-        Start a SOCKS proxy and make it available on a local socket.
+        Start a SOCKS5 proxy and make it available on a local socket.
 
         :param str bind_address: the interface to bind to
         :param int port: the port to bind to
 
-        :return: a new `.SocksProxy` object
+        :return: a new `.SOCKSProxy` object
         """
-        socks_proxy = SocksProxy(self._transport, bind_address, port)
+        socks_proxy = SOCKSProxy(self._transport, bind_address, port)
         self._socks_proxies.append(socks_proxy)
         return socks_proxy
 
     def get_socks_proxies(self):
         """
-        Return the list of all currently listening SOCKS proxies.
+        Return the list of all running SOCKS proxies instances.
 
-        :return: all open `.SocksProxy` objects for this SSH connection.
+        :return: list of running `.SOCKSProxy` objects for this SSH client
         """
         return self._socks_proxies
 
