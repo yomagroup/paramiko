@@ -21,6 +21,8 @@ Useful functions used by the rest of paramiko.
 """
 
 
+import errno
+import socket
 import sys
 import struct
 import traceback
@@ -335,3 +337,37 @@ def u(s, encoding="utf8"):
         return s
     else:
         raise TypeError(f"Expected unicode or bytes, got {type(s)}")
+
+
+def families_and_addresses(hostname, port):
+    """
+    Yield pairs of address families and addresses to try for connecting.
+
+    :param str hostname: the server to connect to
+    :param int port: the server port to connect to
+    :returns: Yields an iterable of ``(family, address)`` tuples
+    """
+    guess = True
+    addrinfos = socket.getaddrinfo(
+        hostname, port, socket.AF_UNSPEC, socket.SOCK_STREAM
+    )
+    for (family, socktype, proto, canonname, sockaddr) in addrinfos:
+        if socktype == socket.SOCK_STREAM:
+            yield family, sockaddr
+            guess = False
+
+    # some OS like AIX don't indicate SOCK_STREAM support, so just
+    # guess. :(  We only do this if we did not get a single result marked
+    # as socktype == SOCK_STREAM.
+    if guess:
+        for family, _, _, _, sockaddr in addrinfos:
+            yield family, sockaddr
+
+
+def ip_addr_to_str(addr):
+    """
+    Return a protocol version aware formatted string for an IP address tuple.
+    """
+    if ":" in addr[0]:
+        return "[{}]:{}".format(addr[0], addr[1])
+    return "{}:{}".format(addr[0], addr[1])
