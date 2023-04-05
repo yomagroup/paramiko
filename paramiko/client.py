@@ -45,7 +45,6 @@ from paramiko.ssh_exception import (
 from paramiko.transport import Transport
 from paramiko.util import (
     families_and_addresses,
-    retry_on_signal,
     ClosingContextManager
 )
 
