@@ -17,7 +17,7 @@
 #
 # You should have received a copy of the GNU Lesser General Public License
 # along with Paramiko; if not, write to the Free Software Foundation, Inc.,
-# 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.
+# 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301 USA.
 
 """
 Unit Tests for the GSS-API / SSPI SSHv2 Diffie-Hellman Key Exchange and user
@@ -31,7 +31,7 @@ import unittest
 
 import paramiko
 
-from .util import needs_gssapi, KerberosTestCase, update_env
+from ._util import needs_gssapi, KerberosTestCase, update_env, _support
 
 
 class NullServer(paramiko.ServerInterface):
@@ -80,7 +80,7 @@ class GSSKexTest(KerberosTestCase):
     def _run(self):
         self.socks, addr = self.sockl.accept()
         self.ts = paramiko.Transport(self.socks, gss_kex=True)
-        host_key = paramiko.RSAKey.from_private_key_file("tests/test_rsa.key")
+        host_key = paramiko.RSAKey.from_private_key_file(_support("rsa.key"))
         self.ts.add_server_key(host_key)
         self.ts.set_gss_host(self.realm.hostname)
         try:
@@ -96,12 +96,12 @@ class GSSKexTest(KerberosTestCase):
         Diffie-Hellman Key Exchange and user authentication with the GSS-API
         context created during key exchange.
         """
-        host_key = paramiko.RSAKey.from_private_key_file("tests/test_rsa.key")
+        host_key = paramiko.RSAKey.from_private_key_file(_support("rsa.key"))
         public_host_key = paramiko.RSAKey(data=host_key.asbytes())
 
         self.tc = paramiko.SSHClient()
         self.tc.get_host_keys().add(
-            "[%s]:%d" % (self.hostname, self.port), "ssh-rsa", public_host_key
+            f"[{self.hostname}]:{self.port}", "ssh-rsa", public_host_key
         )
         self.tc.connect(
             self.hostname,

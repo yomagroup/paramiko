@@ -14,7 +14,7 @@
 #
 # You should have received a copy of the GNU Lesser General Public License
 # along with Paramiko; if not, write to the Free Software Foundation, Inc.,
-# 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.
+# 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301 USA.
 
 """
 Some unit tests for the ssh2 protocol in Transport.
@@ -30,11 +30,11 @@ from cryptography.hazmat.primitives.ciphers import algorithms, Cipher, modes
 from paramiko import Message, Packetizer, util
 from paramiko.common import byte_chr, zero_byte
 
-from .loop import LoopSocket
+from ._loop import LoopSocket
 
 
 x55 = byte_chr(0x55)
-x1f = byte_chr(0x1f)
+x1f = byte_chr(0x1F)
 
 
 class PacketizerTest(unittest.TestCase):

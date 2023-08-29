@@ -2,6 +2,524 @@
 Changelog
 =========
 
+- :release:`3.3.1 <2023-07-28>`
+- :bug:`-` Cleaned up some very old root level files, mostly just to exercise
+  some of our doc build and release machinery. This changelog entry
+  intentionally left blank! ``nothing-to-see-here-move-along.gif``
+- :release:`3.3.0 <2023-07-28>`
+- :feature:`1907` (solves :issue:`1992`) Add support and tests for ``Match
+  final …`` (frequently used in ProxyJump configurations to exclude the jump
+  host) to our :ref:`SSH config parser <ssh-config-support>`. Patch by
+  ``@commonism``.
+- :feature:`2058` (solves :issue:`1587` and possibly others) Add an explicit
+  ``max_concurrent_prefetch_requests`` argument to
+  `paramiko.client.SSHClient.get` and `paramiko.client.SSHClient.getfo`,
+  allowing users to limit the number of concurrent requests used during
+  prefetch. Patch by ``@kschoelhorn``, with a test by ``@bwinston-sdp``.
+- :release:`3.2.0 <2023-05-25>`
+- :bug:`- major` Fixed a very sneaky bug found at the apparently
+  rarely-traveled intersection of ``RSA-SHA2`` keys, certificates, SSH agents,
+  and stricter-than-OpenSSH server targets. This manifested as yet another
+  "well, if we turn off SHA2 at one end or another, everything works again"
+  problem, for example with version 12 of the Teleport server endpoint.
+
+  This has been fixed; Paramiko tweaked multiple aspects of how it requests
+  agent signatures, and the agent appears to do the right thing now.
+
+  Thanks to Ryan Stoner for the bug report and testing.
+- :bug:`2012 major` (also :issue:`1961` and countless others) The
+  ``server-sig-algs`` and ``RSA-SHA2`` features added around Paramiko 2.9 or
+  so, had the annoying side effect of not working with servers that don't
+  support *either* of those feature sets, requiring use of
+  ``disabled_algorithms`` to forcibly disable the SHA2 algorithms on Paramiko's
+  end.
+
+  The **experimental** `~paramiko.transport.ServiceRequestingTransport` (noted
+  in its own entry in this changelog) includes a fix for this issue,
+  specifically by falling back to the same algorithm as the in-use pubkey if
+  it's in the algorithm list (leaving the "first algorithm in said list" as an
+  absolute final fallback).
+- :feature:`-` Implement ``_fields()`` on `~paramiko.agent.AgentKey` so that it
+  may be compared (via ``==``) with other `~paramiko.pkey.PKey` instances.
+- :bug:`23 major` Since its inception, Paramiko has (for reasons lost to time)
+  implemented authentication as a side effect of handling affirmative replies
+  to ``MSG_SERVICE_REQUEST`` protocol messages. What this means is Paramiko
+  makes one such request before every ``MSG_USERAUTH_REQUEST``, i.e. every auth
+  attempt.
+
+  OpenSSH doesn't care if clients send multiple service requests, but other
+  server implementations are often stricter in what they accept after an
+  initial service request (due to the RFCs not being clear). This can result in
+  odd behavior when a user doesn't authenticate successfully on the very first
+  try (for example, when the right key for a target host is the third in one's
+  ssh-agent).
+
+  This version of Paramiko now contains an opt-in
+  `~paramiko.transport.Transport` subclass,
+  `~paramiko.transport.ServiceRequestingTransport`, which more-correctly
+  implements service request handling in the Transport, and uses an
+  auth-handler subclass internally which has been similarly adapted. Users
+  wanting to try this new experimental code path may hand this class to
+  `SSHClient.connect <paramiko.client.SSHClient.connect>` as its
+  ``transport_factory`` kwarg.
+
+  .. warning::
+      This feature is **EXPERIMENTAL** and its code may be subject to change.
+
+      In addition:
+        - minor backwards incompatible changes exist in the new code paths,
+          most notably the removal of the (inconsistently applied and rarely
+          used) ``event`` arguments to the ``auth_xxx`` methods.
+        - GSSAPI support has only been partially implemented, and is untested.
+
+  .. note::
+      Some minor backwards-*compatible* changes were made to the **existing**
+      Transport and AuthHandler classes to facilitate the new code. For
+      example, ``Transport._handler_table`` and
+      ``AuthHandler._client_handler_table`` are now properties instead of raw
+      attributes.
+
+- :feature:`387` Users of `~paramiko.client.SSHClient` can now configure the
+  authentication logic Paramiko uses when connecting to servers; this
+  functionality is intended for advanced users and higher-level libraries such
+  as `Fabric <https://fabfile.org>`_. See `~paramiko.auth_strategy` for
+  details.
+
+  Fabric's co-temporal release includes a proof-of-concept use of this feature,
+  implementing an auth flow much closer to that of the OpenSSH client (versus
+  Paramiko's legacy behavior). It is **strongly recommended** that if this
+  interests you, investigate replacing any direct use of ``SSHClient`` with
+  Fabric's ``Connection``.
+
+  .. warning::
+      This feature is **EXPERIMENTAL**; please see its docs for details.
+
+- :feature:`-` Enhanced `~paramiko.agent.AgentKey` with new attributes, such
+  as:
+
+    - Added a ``comment`` attribute (and constructor argument);
+      `Agent.get_keys() <paramiko.agent.Agent.get_keys>` now uses this kwarg to
+      store any comment field sent over by the agent. The original version of
+      the agent feature inexplicably did not store the comment anywhere.
+    - Agent-derived keys now attempt to instantiate a copy of the appropriate
+      key class for access to other algorithm-specific members (eg key size).
+      This is available as the ``.inner_key`` attribute.
+
+  .. note::
+      This functionality is now in use in Fabric's new ``--list-agent-keys``
+      feature, as well as in Paramiko's debug logging.
+
+- :feature:`-` `~paramiko.pkey.PKey` now offers convenience
+  "meta-constructors", static methods that simplify the process of
+  instantiating the correct subclass for a given key input.
+
+  For example, `PKey.from_path <paramiko.pkey.PKey.from_path>` can load a file
+  path without knowing *a priori* what type of key it is (thanks to some handy
+  methods within our cryptography dependency). Going forwards, we expect this
+  to be the primary method of loading keys by user code that runs on "human
+  time" (i.e. where some minor efficiencies are worth the convenience).
+
+  In addition, `PKey.from_type_string <paramiko.pkey.PKey.from_type_string>`
+  now exists, and is being used in some internals to load ssh-agent keys.
+
+  As part of these changes, `~paramiko.pkey.PKey` and friends grew an
+  `~paramiko.pkey.PKey.identifiers` classmethod; this is inspired by the
+  `~paramiko.ecdsakey.ECDSAKey.supported_key_format_identifiers` classmethod
+  (which now refers to the new method.) This also includes adding a ``.name``
+  attribute to most key classes (which will eventually replace ``.get_name()``.
+
+- :feature:`-` `~paramiko.pkey.PKey` grew a new ``.algorithm_name`` property
+  which displays the key algorithm; this is typically derived from the value of
+  `~paramiko.pkey.PKey.get_name`. For example, ED25519 keys have a ``get_name``
+  of ``ssh-ed25519`` (the SSH protocol key type field value), and now have a
+  ``algorithm_name`` of ``ED25519``.
+- :feature:`-` `~paramiko.pkey.PKey` grew a new ``.fingerprint`` property which
+  emits a fingerprint string matching the SHA256+Base64 values printed by
+  various OpenSSH tooling (eg ``ssh-add -l``, ``ssh -v``). This is intended to
+  help troubleshoot Paramiko-vs-OpenSSH behavior and will eventually replace
+  the venerable ``get_fingerprint`` method.
+- :bug:`- major` `~paramiko.agent.AgentKey` had a dangling Python 3
+  incompatible ``__str__`` method returning bytes. This method has been
+  removed, allowing the superclass' (`~paramiko.pkey.PKey`) method to run
+  instead.
+- :release:`3.1.0 <2023-03-10>`
+- :feature:`2013` (solving :issue:`2009`, plus others) Add an explicit
+  ``channel_timeout`` keyword argument to `paramiko.client.SSHClient.connect`,
+  allowing users to configure the previously-hardcoded default value of 3600
+  seconds. Thanks to ``@VakarisZ`` and ``@ilija-lazoroski`` for the report and
+  patch, with credit to Mike Salvatore for patch review.
+- :feature:`2173` Accept single tabs as field separators (in addition to
+  single spaces) in `<paramiko.hostkeys.HostKeyEntry.from_line>` for parity
+  with OpenSSH's KnownHosts parser. Patched by Alex Chavkin.
+- :support:`2178 backported` Apply ``codespell`` to the codebase, which found a
+  lot of very old minor spelling mistakes in docstrings. Also modernize many
+  instances of ``*largs`` vs ``*args`` and ``**kwarg`` vs ``**kwargs``. Patch
+  courtesy of Yaroslav Halchenko, with review from Brian Skinn.
+- :release:`3.0.0 <2023-01-20>`
+- :bug:`2110 major` Remove some unnecessary ``__repr__`` calls when handling
+  bytes-vs-str conversions. This was apparently doing a lot of unintentional
+  data processing, which adds up in some use cases -- such as SFTP transfers,
+  which may now be significantly faster. Kudos to Shuhua Zhong for catch &
+  patch.
+- :bug:`2165 major` Streamline some redundant (and costly) byte conversion
+  calls in the packetizer and the core SFTP module. This should lead to some
+  SFTP speedups at the very least. Thanks to Alex Gaynor for the patch.
+- :support:`-` ``paramiko.util.retry_on_signal`` (and any internal uses of
+  same, and also any internal retries of ``EINTR`` on eg socket operations) has
+  been removed. As of Python 3.5, per `PEP 475
+  <https://peps.python.org/pep-0475/>`_, this functionality (and retrying
+  ``EINTR`` generally) is now part of the standard library.
+
+  .. warning::
+    This change is backwards incompatible if you were explicitly
+    importing/using this particular function. The observable behavior otherwise
+    should not be changing.
+
+- :support:`732` (also re: :issue:`630`) `~paramiko.config.SSHConfig` used to
+  straight-up delete the ``proxycommand`` key from config lookup results when
+  the source config said ``ProxyCommand none``. This has been altered to
+  preserve the key and give it the Python value ``None``, thus making the
+  Python representation more in line with the source config file.
+
+  .. warning::
+    This change is backwards incompatible if you were relying on the old (1.x,
+    2.x) behavior for some reason (eg assuming all ``proxycommand`` values were
+    valid subcommand strings).
+
+- :support:`-` The behavior of private key classes' (ie anything inheriting
+  from `~paramiko.pkey.PKey`)  private key writing methods used to perform a
+  manual, extra ``chmod`` call after writing. This hasn't been strictly
+  necessary since the mid 2.x release line (when key writing started giving the
+  ``mode`` argument to `os.open`), and has now been removed entirely.
+
+  This should only be observable if you were mocking Paramiko's system calls
+  during your own testing, or similar.
+- :support:`-` ``PKey.__cmp__`` has been removed. Ordering-oriented comparison
+  of key files is unlikely to have ever made sense (the old implementation
+  attempted to order by the hashes of the key material) and so we have not
+  bothered setting up ``__lt__`` and friends at this time. The class continues
+  to have its original ``__eq__`` untouched.
+
+  .. warning::
+    This change is backwards incompatible if you were actually trying to sort
+    public key objects (directly or indirectly). Please file bug reports
+    detailing your use case if you have some intractable need for this
+    behavior, and we'll consider adding back the necessary Python 3 magic
+    methods so that it works as before.
+
+- :bug:`- major` A handful of lower-level classes (notably
+  `paramiko.message.Message` and `paramiko.pkey.PKey`) previously returned
+  `bytes` objects from their implementation of ``__str__``, even under Python
+  3; and there was never any ``__bytes__`` method.
+
+  These issues have been fixed by renaming ``__str__`` to ``__bytes__`` and
+  relying on Python's default "stringification returns the output of
+  ``__repr__``" behavior re: any real attempts to ``str()`` such objects.
+- :support:`-` ``paramiko.common.asbytes`` has been moved to
+  ``paramiko.util.asbytes``.
+
+  .. warning::
+    This change is backwards incompatible if you were directly using this
+    function (which is unlikely).
+
+- :support:`-` Remove the now irrelevant ``paramiko.py3compat`` module.
+
+  .. warning::
+    This change is backwards incompatible. Such references should be
+    search-and-replaced with their modern Python 3.6+ equivalents; in some
+    cases, still-useful methods or values have been moved to ``paramiko.util``
+    (most) or ``paramiko.common`` (``byte_*``).
+
+- :support:`-` Drop support for Python versions less than 3.6, including Python
+  2. So long and thanks for all the fish!
+
+  .. warning::
+    This change is backwards incompatible. However, our packaging metadata has
+    been updated to include ``python_requires``, so this should not cause
+    breakage unless you're on an old installation method that can't read this
+    metadata.
+
+  .. note::
+    As part of this change, our dependencies have been updated; eg we now
+    require Cryptography>=3.3, up from 2.5.
+
+- :release:`2.12.0 <2022-11-04>`
+- :feature:`2125` (also re: :issue:`2054`) Add a ``transport_factory`` kwarg to
+  `SSHClient.connect <paramiko.client.SSHClient.connect>` for advanced
+  users to gain more control over early Transport setup and manipulation.
+  Thanks to Noah Pederson for the patch.
+- :release:`2.11.1 <2022-11-04>`
+- :release:`2.10.6 <2022-11-04>`
+- :bug:`1822` (via, and relating to, far too many other issues to mention here)
+  Update `~paramiko.client.SSHClient` so it explicitly closes its wrapped
+  socket object upon encountering socket errors at connection time. This should
+  help somewhat with certain classes of memory leaks, resource warnings, and/or
+  errors (though we hasten to remind everyone that Client and Transport have
+  their own ``.close()`` methods for use in non-error situations!). Patch
+  courtesy of ``@YoavCohen``.
+- bug:`1637` (via :issue:`1599`) Raise `~paramiko.ssh_exception.SSHException`
+  explicitly when blank private key data is loaded, instead of the natural
+  result of ``IndexError``. This should help more bits of Paramiko or
+  Paramiko-adjacent codebases to correctly handle this class of error. Credit:
+  Nicholas Dietz.
+- :release:`2.11.0 <2022-05-16>`
+- :release:`2.10.5 <2022-05-16>`
+- :release:`2.9.5 <2022-05-16>`
+- :bug:`1933` Align signature verification algorithm with OpenSSH re:
+  zero-padding signatures which don't match their nominal size/length. This
+  shouldn't affect most users, but will help Paramiko-implemented SSH servers
+  handle poorly behaved clients such as PuTTY. Thanks to Jun Omae for catch &
+  patch.
+- :bug:`2017` OpenSSH 7.7 and older has a bug preventing it from understanding
+  how to perform SHA2 signature verification for RSA certificates (specifically
+  certs - not keys), so when we added SHA2 support it broke all clients using
+  RSA certificates with these servers. This has been fixed in a manner similar
+  to what OpenSSH's own client does: a version check is performed and the
+  algorithm used is downgraded if needed. Reported by Adarsh Chauhan, with fix
+  suggested by Jun Omae.
+- :support:`2038` (via :issue:`2039`) Recent versions of Cryptography have
+  deprecated Blowfish algorithm support; in lieu of an easy method for users to
+  remove it from the list of algorithms Paramiko tries to import and use, we've
+  decided to remove it from our "preferred algorithms" list. This will both
+  discourage use of a weak algorithm, and avoid warnings. Credit for
+  report/patch goes to Mike Roest.
+- :bug:`2008` (via :issue:`2010`) Windows-native SSH agent support as merged in
+  2.10 could encounter ``Errno 22`` ``OSError`` exceptions in some scenarios
+  (eg server not cleanly closing a relevant named pipe). This has been worked
+  around and should be less problematic. Reported by Danilo Campana Fuchs and
+  patched by Jun Omae.
+- :release:`2.10.4 <2022-04-25>`
+- :release:`2.9.4 <2022-04-25>`
+- :support:`1838 backported` (via :issue:`1870`/:issue:`2028`) Update
+  ``camelCase`` method calls against the ``threading`` module to be
+  ``snake_case``; this and related tweaks should fix some deprecation warnings
+  under Python 3.10. Thanks to Karthikeyan Singaravelan for the report,
+  ``@Narendra-Neerukonda`` for the patch, and to Thomas Grainger and Jun Omae
+  for patch workshopping.
+- :feature:`1951` Add SSH config token expansion (eg ``%h``, ``%p``) when
+  parsing ``ProxyJump`` directives. Patch courtesy of Bruno Inec.
+- :bug:`1964` (via :issue:`2024` as also reported in :issue:`2023`)
+  `~paramiko.pkey.PKey` instances' ``__eq__`` did not have the usual safety
+  guard in place to ensure they were being compared to another ``PKey`` object,
+  causing occasional spurious ``BadHostKeyException`` (among other things).
+  This has been fixed. Thanks to Shengdun Hua for the original report/patch and
+  to Christopher Papke for the final version of the fix.
+- :support:`2004` (via :issue:`2011`) Apply unittest ``skipIf`` to tests
+  currently using SHA1 in their critical path, to avoid failures on systems
+  starting to disable SHA1 outright in their crypto backends (eg RHEL 9).
+  Report & patch via Paul Howarth.
+- :bug:`2035` Servers offering certificate variants of hostkey algorithms (eg
+  ``ssh-rsa-cert-v01@openssh.com``) could not have their host keys verified by
+  Paramiko clients, as it only ever considered non-cert key types for that part
+  of connection handshaking. This has been fixed.
+- :release:`2.10.3 <2022-03-18>`
+- :release:`2.9.3 <2022-03-18>`
+- :bug:`1963` (via :issue:`1977`) Certificate-based pubkey auth was
+  inadvertently broken when adding SHA2 support; this has been fixed. Reported
+  by Erik Forsberg and fixed by Jun Omae.
+- :bug:`2002` (via :issue:`2003`) Switch from module-global to thread-local
+  storage when recording thread IDs for a logging helper; this should avoid one
+  flavor of memory leak for long-running processes. Catch & patch via Richard
+  Kojedzinszky.
+- :release:`2.10.2 <2022-03-14>`
+- :bug:`2001` Fix Python 2 compatibility breakage introduced in 2.10.1. Spotted
+  by Christian Hammond.
+
+  .. warning::
+      This is almost certainly the last time we will fix Python 2 related
+      errors! Please see `the roadmap
+      <https://bitprophet.org/projects/#roadmap>`_.
+
+- :release:`2.10.1 <2022-03-11>`
+- :bug:`- (2.10+)` (`CVE-2022-24302
+  <https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2022-24302>`_) Creation
+  of new private key files using `~paramiko.pkey.PKey` subclasses was subject
+  to a race condition between file creation & mode modification, which could be
+  exploited by an attacker with knowledge of where the Paramiko-using code
+  would write out such files.
+
+  This has been patched by using `os.open` and `os.fdopen` to ensure new files
+  are opened with the correct mode immediately. We've left the subsequent
+  explicit ``chmod`` in place to minimize any possible disruption, though it
+  may get removed in future backwards-incompatible updates.
+
+  Thanks to Jan Schejbal for the report & feedback on the solution, and to
+  Jeremy Katz at Tidelift for coordinating the disclosure.
+- :release:`2.10.0 <2022-03-11>`
+- :feature:`1976` Add support for the ``%C`` token when parsing SSH config
+  files. Foundational PR submitted by ``@jbrand42``.
+- :feature:`1509` (via :issue:`1868`, :issue:`1837`) Add support for OpenSSH's
+  Windows agent as a fallback when Putty/WinPageant isn't available or
+  functional. Reported by ``@benj56`` with patches/PRs from ``@lewgordon`` and
+  Patrick Spendrin.
+- :bug:`892 major` Significantly speed up low-level read/write actions on
+  `~paramiko.sftp_file.SFTPFile` objects by using `bytearray`/`memoryview`.
+  This is unlikely to change anything for users of the higher level methods
+  like `SFTPClient.get <paramiko.sftp_client.SFTPClient.get>` or
+  `SFTPClient.getfo <paramiko.sftp_client.SFTPClient.getfo>`, but users of
+  `SFTPClient.open <paramiko.sftp_client.SFTPClient.open>` will likely see
+  orders of magnitude improvements for files larger than a few megabytes in
+  size.
+
+  Thanks to ``@jkji`` for the original report and to Sevastian Tchernov for the
+  patch.
+- :support:`1985` Add ``six`` explicitly to install-requires; it snuck into
+  active use at some point but has only been indicated by transitive dependency
+  on ``bcrypt`` until they somewhat-recently dropped it. This will be
+  short-lived until we `drop Python 2
+  support <https://bitprophet.org/projects/#roadmap>`_. Thanks to Sondre
+  Lillebø Gundersen for catch & patch.
+- :release:`2.9.2 <2022-01-08>`
+- :bug:`-` Connecting to servers which support ``server-sig-algs`` but which
+  have no overlap between that list and what a Paramiko client supports, now
+  raise an exception instead of defaulting to ``rsa-sha2-512`` (since the use
+  of ``server-sig-algs`` allows us to know what the server supports).
+- :bug:`-` Enhanced log output when connecting to servers that do not support
+  ``server-sig-algs`` extensions, making the new-as-of-2.9 defaulting to SHA2
+  pubkey algorithms more obvious when it kicks in.
+- :release:`2.9.1 <2021-12-24>`
+- :bug:`1955` Server-side support for ``rsa-sha2-256`` and ``ssh-rsa`` wasn't
+  fully operable after 2.9.0's release (signatures for RSA pubkeys were always
+  run through ``rsa-sha2-512`` instead). Report and early stab at a fix
+  courtesy of Jun Omae.
+- :release:`2.9.0 <2021-12-23>`
+- :feature:`1643` (also :issue:`1925`, :issue:`1644`, :issue:`1326`) Add
+  support for SHA-2 variants of RSA key verification algorithms (as described
+  in :rfc:`8332`) as well as limited SSH extension negotiation (:rfc:`8308`).
+
+  .. warning::
+    This change is slightly backwards incompatible, insofar as action is
+    required if your target systems do not support either RSA2 or the
+    ``server-sig-algs`` protocol extension.
+
+    Specifically, you need to specify ``disabled_algorithms={'keys':
+    ['rsa-sha2-256', 'rsa-sha2-512']}`` in either `SSHClient
+    <paramiko.client.SSHClient.__init__>` or `Transport
+    <paramiko.transport.Transport.__init__>`. See below for details on why.
+
+  How SSH servers/clients decide when and how to use this functionality can be
+  complicated; Paramiko's support is as follows:
+
+  - Client verification of server host key during key exchange will now prefer
+    ``rsa-sha2-512``, ``rsa-sha2-256``, and legacy ``ssh-rsa`` algorithms, in
+    that order, instead of just ``ssh-rsa``.
+
+      - Note that the preference order of other algorithm families such as
+        ``ed25519`` and ``ecdsa`` has not changed; for example, those two
+        groups are still preferred over RSA.
+
+  - Server mode will now offer all 3 RSA algorithms for host key verification
+    during key exchange, similar to client mode, if it has been configured with
+    an RSA host key.
+  - Client mode key exchange now sends the ``ext-info-c`` flag signaling
+    support for ``MSG_EXT_INFO``, and support for parsing the latter
+    (specifically, its ``server-sig-algs`` flag) has been added.
+  - Client mode, when performing public key authentication with an RSA key or
+    cert, will act as follows:
+
+    - In all cases, the list of algorithms to consider is based on the new
+      ``preferred_pubkeys`` list (see below) and ``disabled_algorithms``
+      (specifically, its ``pubkeys`` key); this list, like with host keys,
+      prefers SHA2-512, SHA2-256 and SHA1, in that order.
+    - When the server does not send ``server-sig-algs``, Paramiko will attempt
+      the first algorithm in the above list. Clients connecting to legacy
+      servers should thus use ``disabled_algorithms`` to turn off SHA2.
+    - When the server does send ``server-sig-algs``, the first algorithm
+      supported by both ends is used, or if there is none, it falls back to the
+      previous behavior.
+
+  - SSH agent support grew the ability to specify algorithm flags when
+    requesting private key signatures; this is now used to forward SHA2
+    algorithms when appropriate.
+  - Server mode is now capable of pubkey auth involving SHA-2 signatures from
+    clients, provided one's server implementation actually provides for doing
+    so.
+
+    - This includes basic support for sending ``MSG_EXT_INFO`` (containing
+      ``server-sig-algs`` only) to clients advertising ``ext-info-c`` in their
+      key exchange list.
+
+  In order to implement the above, the following API additions were made:
+
+  - `PKey.sign_ssh_data <paramiko.pkey.PKey>`: Grew an extra, optional
+    ``algorithm`` keyword argument (defaulting to ``None`` for most subclasses,
+    and to ``"ssh-rsa"`` for `~paramiko.rsakey.RSAKey`).
+  - A new `~paramiko.ssh_exception.SSHException` subclass was added,
+    `~paramiko.ssh_exception.IncompatiblePeer`, and is raised in all spots
+    where key exchange aborts due to algorithmic incompatibility.
+
+    - Like all other exceptions in that module, it inherits from
+      ``SSHException``, and as we did not change anything else about the
+      raising (i.e. the attributes and message text are the same) this change
+      is backwards compatible.
+
+  - `~paramiko.transport.Transport` grew a ``_preferred_pubkeys`` attribute and
+    matching ``preferred_pubkeys`` property to match the other, kex-focused,
+    such members. This allows client pubkey authentication to honor the
+    ``disabled_algorithms`` feature.
+
+  Thanks to Krisztián Kovács for the report and an early stab at a patch, as
+  well as the numerous users who submitted feedback on the issue, including but
+  not limited to: Christopher Rabotin, Sam Bull, and Manfred Kaiser.
+
+- :release:`2.8.1 <2021-11-28>`
+- :bug:`985` (via :issue:`992`) Fix listdir failure when server uses a locale.
+  Now on Python 2.7 `SFTPAttributes <paramiko.sftp_attr.SFTPAttributes>` will
+  decode abbreviated month names correctly rather than raise
+  ``UnicodeDecodeError```. Patch courtesy of Martin Packman.
+- :bug:`1024` Deleting items from `~paramiko.hostkeys.HostKeys` would
+  incorrectly raise `KeyError` even for valid keys, due to a logic bug. This
+  has been fixed. Report & patch credit: Jia Zhang.
+- :bug:`1257` (also :issue:`1266`) Update RSA and ECDSA key decoding
+  subroutines to correctly catch exception types thrown by modern
+  versions of Cryptography (specifically ``TypeError`` and
+  its internal ``UnsupportedAlgorithm``). These exception classes will now
+  become `~paramiko.ssh_exception.SSHException` instances instead of bubbling
+  up. Thanks to Ignat Semenov for the report and ``@tylergarcianet`` for an
+  early patch.
+- :bug:`-` (also :issue:`908`) Update `~paramiko.pkey.PKey` and subclasses to
+  compare (``__eq__``) via direct field/attribute comparison instead of hashing
+  (while retaining the existing behavior of ``__hash__`` via a slight
+  refactor). Big thanks to Josh Snyder and Jun Omae for the reports, and to
+  Josh Snyder for reproduction details & patch.
+
+  .. warning::
+    This fixes a security flaw! If you are running Paramiko on 32-bit systems
+    with low entropy (such as any 32-bit Python 2, or a 32-bit Python 3 which
+    is running with ``PYTHONHASHSEED=0``) it is possible for an attacker to
+    craft a new keypair from an exfiltrated public key, which Paramiko would
+    consider equal to the original key.
+
+    This could enable attacks such as, but not limited to, the following:
+
+    - Paramiko server processes would incorrectly authenticate the attacker
+      (using their generated private key) as if they were the victim. We see
+      this as the most plausible attack using this flaw.
+    - Paramiko client processes would incorrectly validate a connected server
+      (when host key verification is enabled) while subjected
+      to a man-in-the-middle attack. This impacts more users than the
+      server-side version, but also carries higher requirements for the
+      attacker, namely successful DNS poisoning or other MITM techniques.
+
+- :release:`2.8.0 <2021-10-09>`
+- :support:`-` Administrivia overhaul, including but not limited to:
+
+  - Migrate CI to CircleCI
+  - Primary dev branch is now ``main`` (renamed)
+  - Many README edits for clarity, modernization etc; including a bunch more
+    (and consistent) status badges & unification with main project site index
+  - PyPI page much more fleshed out (long_description is now filled in with the
+    README; sidebar links expanded; etc)
+  - flake8, pytest configs split out of setup.cfg into their own files
+  - Invoke/invocations (used by maintainers/contributors) upgraded to modern
+    versions
+
+- :bug:`1462 major` (via :issue:`1882`) Newer server-side key exchange
+  algorithms not intended to use SHA1 (``diffie-hellman-group14-sha256``,
+  ``diffie-hellman-group16-sha512``) were incorrectly using SHA1 after all, due
+  to a bug causing them to ignore the ``hash_algo`` class attribute. This has
+  been corrected. Big thanks to ``@miverson`` for the report and to Benno Rice
+  for the patch.
 - :feature:`1846` Add a ``prefetch`` keyword argument to `SFTPClient.get <paramiko.sftp_client.SFTPClient.get>`/`SFTPClient.getfo <paramiko.sftp_client.SFTPClient.getfo>`
   so users who need to skip SFTP prefetching are able to conditionally turn it
   off. Thanks to Github user ``@h3ll0r`` for the PR.
@@ -765,7 +1283,7 @@ Changelog
   functionality to address hangs from dropped network connections and/or failed
   handshakes. Credit to ``@vazir`` and ``@dacut`` for the original patches and
   to Olle Lundberg for reimplementation.
-- :bug:`490` Skip invalid/unparseable lines in ``known_hosts`` files, instead
+- :bug:`490` Skip invalid/unparsable lines in ``known_hosts`` files, instead
   of raising `~paramiko.ssh_exception.SSHException`. This brings Paramiko's
   behavior more in line with OpenSSH, which silently ignores such input. Catch
   & patch courtesy of Martin Topholm.

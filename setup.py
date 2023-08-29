@@ -24,16 +24,7 @@ if sys.platform == "darwin":
 
     setup_helper.install_custom_make_tarball()
 
-longdesc = """
-This is a library for making SSH2 connections (client or server).
-Emphasis is on using SSH2 as an alternative to SSL for making secure
-connections between python scripts.  All major ciphers and hash methods
-are supported.  SFTP client and server mode are both supported too.
-
-To install the development version, ``pip install -e
-git+https://github.com/paramiko/paramiko/#egg=paramiko``.
-"""
-
+long_description = open("README.rst").read()
 
 # Version info -- read without importing
 _locals = {}
@@ -49,8 +40,9 @@ extras_require = {
         'gssapi>=1.4.1;platform_system!="Windows"',
         'pywin32>=2.1.8;platform_system=="Windows"',
     ],
-    "ed25519": ["pynacl>=1.0.1", "bcrypt>=3.1.3"],
-    "invoke": ["invoke>=1.3"],
+    "invoke": ["invoke>=2.0"],
+    # TODO 4.0: remove entrypoint as irrelevant
+    "ed25519": [],
 }
 everything = []
 for subdeps in extras_require.values():
@@ -61,10 +53,17 @@ setup(
     name="paramiko",
     version=version,
     description="SSH2 protocol library",
-    long_description=longdesc,
+    long_description=long_description,
     author="Jeff Forcier",
     author_email="jeff@bitprophet.org",
-    url="https://github.com/paramiko/paramiko/",
+    url="https://paramiko.org",
+    project_urls={
+        "Docs": "https://docs.paramiko.org",
+        "Source": "https://github.com/paramiko/paramiko",
+        "Issues": "https://github.com/paramiko/paramiko/issues",
+        "Changelog": "https://www.paramiko.org/changelog.html",
+        "CI": "https://app.circleci.com/pipelines/github/paramiko/paramiko",
+    },
     packages=["paramiko"],
     license="LGPL",
     platforms="Posix; MacOS X; Windows",
@@ -77,17 +76,20 @@ setup(
         "Topic :: Internet",
         "Topic :: Security :: Cryptography",
         "Programming Language :: Python",
-        "Programming Language :: Python :: 2",
-        "Programming Language :: Python :: 2.7",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.4",
-        "Programming Language :: Python :: 3.5",
+        "Programming Language :: Python :: 3 :: Only",
         "Programming Language :: Python :: 3.6",
         "Programming Language :: Python :: 3.7",
         "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
     ],
-    # TODO 3.0: remove bcrypt, pynacl and update installation docs noting that
-    # use of the extras_require(s) is now required for those
-    install_requires=["bcrypt>=3.1.3", "cryptography>=2.5", "pynacl>=1.0.1"],
+    python_requires=">=3.6",
+    install_requires=[
+        "bcrypt>=3.2",
+        "cryptography>=3.3",
+        "pynacl>=1.5",
+    ],
     extras_require=extras_require,
 )

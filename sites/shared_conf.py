@@ -13,7 +13,7 @@ html_theme_options = {
     "github_user": "paramiko",
     "github_repo": "paramiko",
     "analytics_id": "UA-18486793-2",
-    "travis_button": True,
+    "travis_button": False,
     "tidelift_url": "https://tidelift.com/subscription/pkg/pypi-paramiko?utm_source=pypi-paramiko&utm_medium=referral&utm_campaign=docs",
 }
 html_sidebars = {
@@ -21,12 +21,11 @@ html_sidebars = {
 }
 
 # Everything intersphinx's to Python
-intersphinx_mapping = {"python": ("https://docs.python.org/2.7/", None)}
+intersphinx_mapping = {"python": ("https://docs.python.org/3.6/", None)}
 
 # Regular settings
 project = "Paramiko"
-year = datetime.now().year
-copyright = "{} Jeff Forcier".format(year)
+copyright = f"{datetime.now().year} Jeff Forcier"
 master_doc = "index"
 templates_path = ["_templates"]
 exclude_trees = ["_build"]

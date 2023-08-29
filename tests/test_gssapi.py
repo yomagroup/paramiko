@@ -16,7 +16,7 @@
 #
 # You should have received a copy of the GNU Lesser General Public License
 # along with Paramiko; if not, write to the Free Software Foundation, Inc.,
-# 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.
+# 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301 USA.
 
 """
 Test the used APIs for GSS-API / SSPI authentication
@@ -24,13 +24,20 @@ Test the used APIs for GSS-API / SSPI authentication
 
 import socket
 
-from .util import needs_gssapi, KerberosTestCase, update_env
+from ._util import needs_gssapi, KerberosTestCase, update_env
+
+#
+# NOTE: KerberosTestCase skips all tests if it was unable to import k5test
+# third-party library. That's the primary trigger for whether this module
+# effectively gets run or not. See tests/util.py for other triggers (a set of
+# env vars a human might have defined).
+#
 
 
 @needs_gssapi
 class GSSAPITest(KerberosTestCase):
     def setUp(self):
-        super(GSSAPITest, self).setUp()
+        super().setUp()
         # TODO: these vars should all come from os.environ or whatever the
         # approved pytest method is for runtime-configuring test data.
         self.krb5_mech = "1.2.840.113554.1.2.2"

@@ -14,7 +14,7 @@
 #
 # You should have received a copy of the GNU Lesser General Public License
 # along with Paramiko; if not, write to the Free Software Foundation, Inc.,
-# 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.
+# 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301 USA.
 
 # Note: Despite the copyright notice, this was submitted by John
 # Arbash Meinel.  Thanks John!
@@ -116,7 +116,7 @@ def make_tarball(
     mode = "w:" + tarfile_compress_flag.get(compress, "")
 
     mkpath(os.path.dirname(archive_name), dry_run=dry_run)
-    log.info("Creating tar file %s with mode %s" % (archive_name, mode))
+    log.info(f"Creating tar file {archive_name} with mode {mode}")
 
     uid = _get_uid(owner)
     gid = _get_gid(group)
@@ -134,12 +134,7 @@ def make_tarball(
         tar = tarfile.open(archive_name, mode=mode)
         # This recursively adds everything underneath base_dir
         try:
-            try:
-                # Support for the `filter' parameter was added in Python 2.7,
-                # earlier versions will raise TypeError.
-                tar.add(base_dir, filter=_set_uid_gid)
-            except TypeError:
-                tar.add(base_dir)
+            tar.add(base_dir, filter=_set_uid_gid)
         finally:
             tar.close()
 

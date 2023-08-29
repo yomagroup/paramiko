@@ -4,10 +4,12 @@
 from os.path import expanduser
 from socket import gaierror
 
-from paramiko.py3compat import string_types
+try:
+    from invoke import Result
+except ImportError:
+    Result = None
 
-from invoke import Result
-from mock import patch
+from unittest.mock import patch
 from pytest import raises, mark, fixture
 
 from paramiko import (
@@ -17,7 +19,7 @@ from paramiko import (
     ConfigParseError,
 )
 
-from .util import _config
+from ._util import _config
 
 
 @fixture
@@ -42,6 +44,7 @@ def socket():
         # Patch out getfqdn to return some real string for when it gets called;
         # some code (eg tokenization) gets mad w/ MagicMocks
         mocket.getfqdn.return_value = "some.fake.fqdn"
+        mocket.gethostname.return_value = "local.fake.fqdn"
         yield mocket
 
 
@@ -49,7 +52,7 @@ def load_config(name):
     return SSHConfig.from_path(_config(name))
 
 
-class TestSSHConfig(object):
+class TestSSHConfig:
     def setup(self):
         self.config = load_config("robey")
 
@@ -206,7 +209,26 @@ Host test
         assert got == expected
 
     @patch("paramiko.config.getpass")
-    def test_controlpath_token_expansion(self, getpass):
+    def test_proxyjump_token_expansion(self, getpass):
+        getpass.getuser.return_value = "gandalf"
+        config = SSHConfig.from_text(
+            """
+Host justhost
+    ProxyJump jumpuser@%h
+Host userhost
+    ProxyJump %r@%h:222
+Host allcustom
+    ProxyJump %r@%h:%p
+"""
+        )
+        assert config.lookup("justhost")["proxyjump"] == "jumpuser@justhost"
+        assert config.lookup("userhost")["proxyjump"] == "gandalf@userhost:222"
+        assert (
+            config.lookup("allcustom")["proxyjump"] == "gandalf@allcustom:22"
+        )
+
+    @patch("paramiko.config.getpass")
+    def test_controlpath_token_expansion(self, getpass, socket):
         getpass.getuser.return_value = "gandalf"
         config = SSHConfig.from_text(
             """
@@ -217,6 +239,9 @@ Host explicit_user
 Host explicit_host
     HostName ohai
     ControlPath remoteuser %r host %h orighost %n
+
+Host hashbrowns
+    ControlPath %C
         """
         )
         result = config.lookup("explicit_user")["controlpath"]
@@ -225,6 +250,9 @@ Host explicit_host
         result = config.lookup("explicit_host")["controlpath"]
         # Remote user falls back to local user; host and orighost may differ
         assert result == "remoteuser gandalf host ohai orighost explicit_host"
+        # Supports %C
+        result = config.lookup("hashbrowns")["controlpath"]
+        assert result == "a438e7dbf5308b923aba9db8fe2ca63447ac8688"
 
     def test_negation(self):
         config = SSHConfig.from_text(
@@ -276,10 +304,11 @@ ProxyCommand foo=bar:%h-%p
 
             assert config.lookup(host) == values
 
-    def test_identityfile(self):
+    @patch("paramiko.config.getpass")
+    def test_identityfile(self, getpass, socket):
+        getpass.getuser.return_value = "gandalf"
         config = SSHConfig.from_text(
             """
-
 IdentityFile id_dsa0
 
 Host *
@@ -290,6 +319,9 @@ IdentityFile id_dsa2
 
 Host dsa2*
 IdentityFile id_dsa22
+
+Host hashbrowns
+IdentityFile %C
 """
         )
         for host, values in {
@@ -302,8 +334,15 @@ IdentityFile id_dsa22
                 "hostname": "dsa22",
                 "identityfile": ["id_dsa0", "id_dsa1", "id_dsa22"],
             },
+            "hashbrowns": {
+                "hostname": "hashbrowns",
+                "identityfile": [
+                    "id_dsa0",
+                    "id_dsa1",
+                    "a438e7dbf5308b923aba9db8fe2ca63447ac8688",
+                ],
+            },
         }.items():
-
             assert config.lookup(host) == values
 
     def test_config_addressfamily_and_lazy_fqdn(self):
@@ -421,7 +460,7 @@ Host param3 parara
         with raises(ConfigParseError):
             load_config("invalid")
 
-    def test_proxycommand_none_issue_418(self):
+    def test_proxycommand_none_issue_415(self):
         config = SSHConfig.from_text(
             """
 Host proxycommand-standard-none
@@ -433,10 +472,12 @@ Host proxycommand-with-equals-none
         )
         for host, values in {
             "proxycommand-standard-none": {
-                "hostname": "proxycommand-standard-none"
+                "hostname": "proxycommand-standard-none",
+                "proxycommand": None,
             },
             "proxycommand-with-equals-none": {
-                "hostname": "proxycommand-with-equals-none"
+                "hostname": "proxycommand-with-equals-none",
+                "proxycommand": None,
             },
         }.items():
 
@@ -456,13 +497,11 @@ Host *
     ProxyCommand default-proxy
 """
         )
-        # When bug is present, the full stripping-out of specific-host's
-        # ProxyCommand means it actually appears to pick up the default
-        # ProxyCommand value instead, due to cascading. It should (for
-        # backwards compatibility reasons in 1.x/2.x) appear completely blank,
-        # as if the host had no ProxyCommand whatsoever.
-        # Threw another unrelated host in there just for sanity reasons.
-        assert "proxycommand" not in config.lookup("specific-host")
+        # In versions <3.0, 'None' ProxyCommands got deleted, and this itself
+        # caused bugs. In 3.0, we more cleanly map "none" to None. This test
+        # has been altered accordingly but left around to ensure no
+        # regressions.
+        assert config.lookup("specific-host")["proxycommand"] is None
         assert config.lookup("other-host")["proxycommand"] == "other-proxy"
         cmd = config.lookup("some-random-host")["proxycommand"]
         assert cmd == "default-proxy"
@@ -472,7 +511,7 @@ Host *
         assert result["hostname"] == "prefix.whatever"
 
 
-class TestSSHConfigDict(object):
+class TestSSHConfigDict:
     def test_SSHConfigDict_construct_empty(self):
         assert not SSHConfigDict()
 
@@ -531,7 +570,7 @@ Host *
         assert config.lookup("anything-else").as_int("port") == 3333
 
 
-class TestHostnameCanonicalization(object):
+class TestHostnameCanonicalization:
     # NOTE: this class uses on-disk configs, and ones with real (at time of
     # writing) DNS names, so that one can easily test OpenSSH's behavior using
     # "ssh -F path/to/file.config -G <target>".
@@ -630,7 +669,7 @@ class TestHostnameCanonicalization(object):
 
 
 @mark.skip
-class TestCanonicalizationOfCNAMEs(object):
+class TestCanonicalizationOfCNAMEs:
     def test_permitted_cnames_may_be_one_to_one_mapping(self):
         # CanonicalizePermittedCNAMEs *.foo.com:*.bar.com
         pass
@@ -656,7 +695,7 @@ class TestCanonicalizationOfCNAMEs(object):
         pass
 
 
-class TestMatchAll(object):
+class TestMatchAll:
     def test_always_matches(self):
         result = load_config("match-all").lookup("general")
         assert result["user"] == "awesome"
@@ -690,7 +729,7 @@ def _expect(success_on):
         Single string or list of strings, noting commands that should appear to
         succeed.
     """
-    if isinstance(success_on, string_types):
+    if isinstance(success_on, str):
         success_on = [success_on]
 
     def inner(command, *args, **kwargs):
@@ -705,7 +744,8 @@ def _expect(success_on):
     return inner
 
 
-class TestMatchExec(object):
+@mark.skipif(Result is None, reason="requires invoke package")
+class TestMatchExec:
     @patch("paramiko.config.invoke", new=None)
     @patch("paramiko.config.invoke_import_error", new=ImportError("meh"))
     def test_raises_invoke_ImportErrors_at_runtime(self):
@@ -739,10 +779,10 @@ class TestMatchExec(object):
     @patch("paramiko.config.getpass")
     @patch("paramiko.config.invoke.run")
     def test_tokenizes_argument(self, run, getpass, socket):
-        socket.gethostname.return_value = "local.fqdn"
         getpass.getuser.return_value = "gandalf"
-        # Actual exec value is "%d %h %L %l %n %p %r %u"
+        # Actual exec value is "%C %d %h %L %l %n %p %r %u"
         parts = (
+            "bf5ba06778434a9384ee4217e462f64888bd0cd2",
             expanduser("~"),
             "configured",
             "local",
@@ -785,7 +825,7 @@ class TestMatchExec(object):
         assert result["hostname"] == "pingable.target"
 
 
-class TestMatchHost(object):
+class TestMatchHost:
     def test_matches_target_name_when_no_hostname(self):
         result = load_config("match-host").lookup("target")
         assert result["user"] == "rand"
@@ -835,7 +875,7 @@ class TestMatchHost(object):
             load_config("match-host-no-arg")
 
 
-class TestMatchOriginalHost(object):
+class TestMatchOriginalHost:
     def test_matches_target_host_not_hostname(self):
         result = load_config("match-orighost").lookup("target")
         assert result["hostname"] == "bogus"
@@ -868,7 +908,7 @@ class TestMatchOriginalHost(object):
             load_config("match-orighost-no-arg")
 
 
-class TestMatchUser(object):
+class TestMatchUser:
     def test_matches_configured_username(self):
         result = load_config("match-user-explicit").lookup("anything")
         assert result["hostname"] == "dumb"
@@ -915,7 +955,7 @@ class TestMatchUser(object):
 
 # NOTE: highly derivative of previous suite due to the former's use of
 # localuser fallback. Doesn't seem worth conflating/refactoring right now.
-class TestMatchLocalUser(object):
+class TestMatchLocalUser:
     @patch("paramiko.config.getpass.getuser")
     def test_matches_local_username(self, getuser):
         getuser.return_value = "gandalf"
@@ -956,7 +996,7 @@ class TestMatchLocalUser(object):
             load_config("match-localuser-no-arg")
 
 
-class TestComplexMatching(object):
+class TestComplexMatching:
     # NOTE: this is still a cherry-pick of a few levels of complexity, there's
     # no point testing literally all possible combinations.
 
@@ -990,3 +1030,19 @@ class TestComplexMatching(object):
         # !canonical in a config that is canonicalized - does NOT match
         result = load_config("match-canonical-yes").lookup("www")
         assert result["user"] == "hidden"
+
+
+class TestFinalMatching(object):
+    def test_finally(self):
+        result = load_config("match-final").lookup("finally")
+        assert result["proxyjump"] == "jump"
+        assert result["port"] == "1001"
+
+    def test_default_port(self):
+        result = load_config("match-final").lookup("default-port")
+        assert result["proxyjump"] == "jump"
+        assert result["port"] == "1002"
+
+    def test_negated(self):
+        result = load_config("match-final").lookup("jump")
+        assert result["port"] == "1003"

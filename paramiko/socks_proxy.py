@@ -30,10 +30,12 @@ try:
 except ImportError:
     from SocketServer import StreamRequestHandler, ThreadingTCPServer
 
-from paramiko.common import DEBUG, asbytes
-from paramiko.py3compat import BytesIO, byte_chr, byte_ord, u
+from paramiko.common import DEBUG, byte_chr, byte_ord
+from io import BytesIO
 from paramiko.ssh_exception import NoValidConnectionsError
 from paramiko.util import (
+    asbytes,
+    u,
     families_and_addresses,
     get_logger,
     ip_addr_to_str,
